@@ -1,149 +1,152 @@
 # Banking Customer Support Multi-Agent System — High-Level Plan
 
-This project is based on the capstone brief in the workspace PDF: a banking customer support assistant using a multi-agent architecture, with a Streamlit interface and Python-based services.
+This project is a banking customer support assistant built around a LangGraph multi-agent workflow, a SQLite support-ticket database, OpenAI-powered classification and response generation, and a Streamlit interface.
 
-## 1. Solution Overview
+## 1. Goals and Scope
 
-The system will process customer messages in three major stages:
+The assistant accepts an unstructured customer message and handles one of three intents:
 
-1. Classifier Agent
-   - Reads an incoming unstructured customer message.
-   - Classifies it as one of:
-     - Positive Feedback
-     - Negative Feedback
-     - Query
-   - Routes the message to the relevant downstream agent.
+- **Positive feedback:** return a personalized thank-you response.
+- **Negative feedback:** create a support ticket and return an empathetic acknowledgment with its ticket number.
+- **Query:** look up a ticket by its seven-digit number and return its current status, or explain that the ticket was not found.
 
-2. Feedback Handler Agent
-   - For positive feedback: generates a warm, personalized thank-you response.
-   - For negative feedback: creates a new support ticket and returns a polite response with the ticket number.
+The application also provides a dashboard for trying scenarios, inspecting ticket records, viewing agent activity, and evaluating workflow quality.
 
-3. Query Handler Agent
-   - Extracts a ticket number from the user message.
-   - Checks the banking support database.
-   - Returns the current ticket status to the customer.
+## 2. Multi-Agent Architecture
 
-A Streamlit dashboard will expose this workflow for simulation, monitoring, and debugging.
+Use LangGraph's Python `StateGraph` as the workflow state machine. Each agent is a graph node; conditional edges route execution using the classifier's result.
 
-## 2. Core Design Principles
+### Shared graph state
 
-- Keep each agent focused on a single responsibility.
-- Use a lightweight orchestration layer to route tasks.
-- Store ticket data in a structured support database.
-- Keep logs and traces for debugging and evaluation.
-- Add a UI layer for agent testing and monitoring.
-- Track quality with evaluation prompts and test scenarios.
+Define a typed state that carries the information needed between nodes:
 
-## 3. Recommended Folder Structure
+- `user_message`: incoming customer text
+- `classification`: `positive_feedback`, `negative_feedback`, or `query`
+- `ticket_number`: seven-digit ticket ID, when applicable
+- `response`: customer-facing result
+- `agent_used`: handler selected by routing
+- `error`: actionable workflow or lookup error, when applicable
+
+Nodes return state updates rather than managing routing themselves. Keep the state limited to the current request and its result.
+
+### Nodes and routing
+
+1. **Classifier node** — sends the message to an OpenAI model with a classification prompt and validates the result against the three supported labels.
+2. **Feedback handler node** — handles both feedback classes:
+   - Positive: identify a customer name if present; otherwise use a generic greeting. Use the LLM to produce a warm, concise thank-you response.
+   - Negative: generate a unique seven-digit ticket number, save a ticket with initial status `New`, and use the LLM to produce an empathetic acknowledgment that includes the ticket number.
+3. **Query handler node** — extracts a seven-digit ticket number from the message, looks it up in SQLite, and returns its status or a clear not-found/invalid-ticket response.
+
+The classifier node routes positive and negative feedback to the feedback handler and queries to the query handler. Each handler writes its result to state and transitions to the graph end. The compiled graph is the single workflow entry point used by the UI.
+
+## 3. Ticket Database
+
+Use SQLite for local support-ticket storage. Define one table, `support_tickets`, consistently across the schema, handlers, and UI:
+
+| Column | Type | Rules / purpose |
+| --- | --- | --- |
+| `ticket_id` | TEXT | Primary key; exactly seven digits |
+| `customer_name` | TEXT | Nullable when the name is not provided |
+| `message` | TEXT | Customer's negative-feedback message |
+| `status` | TEXT | `New`, `In Progress`, or `Resolved` |
+| `created_at` | TIMESTAMP | Ticket creation time |
+| `updated_at` | TIMESTAMP | Most recent status update |
+
+New tickets start with status `New`. This uses the database schema's initial status consistently rather than the conflicting `Unresolved` wording elsewhere in the input notes. Ticket generation must handle collisions by checking the primary key and generating another ID before insertion.
+
+## 4. Request Flow
+
+1. The customer enters a message in Streamlit.
+2. The UI initializes graph state with the message and invokes the compiled LangGraph workflow.
+3. The classifier node uses the OpenAI classification prompt and records the validated classification.
+4. LangGraph conditionally routes state to the feedback or query handler.
+5. The selected handler generates a response and, where applicable, creates a ticket or queries SQLite.
+6. The handler records its outcome in state; the graph returns the final state to Streamlit.
+7. The UI displays the classification, selected agent, response, ticket/database result, and any error.
+8. The logging system records the request outcome for monitoring and debugging.
+
+## 5. Recommended Project Structure
 
 ```text
 capstone-bank-customer-support/
-├── app/
-│   ├── ui/
-│   ├── pages/
-│   └── .gitkeep
 ├── agents/
-│   ├── orchestrator/
 │   ├── classifier/
-│   ├── feedback_handler/
-│   ├── query_handler/
-│   └── .gitkeep
-├── domain/
-│   ├── models/
-│   ├── schemas/
-│   └── .gitkeep
+│   │   └── agent.py                # OpenAI classification node
+│   ├── feedback_handler_agent.py   # Positive and negative feedback node
+│   ├── query_handler_agent.py      # Ticket lookup node
+│   └── orchestrator/
+│       ├── graph.py                # LangGraph StateGraph and conditional edges
+│       └── state.py                # Typed shared graph state
+├── app/
+│   └── ui/
+│       └── streamlit_app.py        # Chat and monitoring dashboard
+├── config/
+│   └── settings.py                 # Environment-based configuration
 ├── integrations/
 │   ├── database/
-│   ├── llm/
-│   └── .gitkeep
-├── data/
-│   ├── raw/
-│   ├── processed/
-│   └── .gitkeep
+│   │   ├── connection.py           # SQLite connection and initialization
+│   │   └── ticket_repository.py    # Ticket insert, lookup, and listing
+│   └── llm/
+│       └── client.py               # OpenAI client/configuration helpers
 ├── evaluation/
-│   ├── prompts/
-│   ├── test_cases/
-│   ├── reports/
-│   └── .gitkeep
-├── logs/
-│   └── .gitkeep
-├── config/
-│   └── .gitkeep
-├── docs/
-│   └── .gitkeep
+│   ├── evaluator.py                # Metrics and evaluation runner
+│   └── test_cases.py               # Labeled examples and edge cases
 ├── tests/
-│   ├── agent_scenarios/
-│   ├── ui_scenarios/
-│   └── .gitkeep
-└── README.md (optional project overview)
+│   └── agent_scenarios/
+├── utils/
+│   └── logger.py                   # Structured workflow logging
+├── data/                           # SQLite database (created at runtime)
+├── logs/                           # JSON Lines events (created at runtime)
+└── docs/
 ```
 
-## 4. Folder Responsibilities
+## 6. Component Responsibilities
 
-### app/
-- Houses the Streamlit user interface and dashboard views.
-- Includes pages for chat simulation, ticket lookup, logs, and evaluation views.
+- **`agents/`** contains focused agents and the LangGraph orchestration. The classifier returns a supported label; handlers perform their domain action; the graph owns conditional routing.
+- **`integrations/database/`** owns SQLite initialization and ticket persistence/retrieval. Agents should use the repository rather than duplicate SQL.
+- **`integrations/llm/`** centralizes OpenAI client configuration and model access. Load API credentials from environment/configuration, never hard-code them.
+- **`app/ui/`** invokes the compiled graph and presents chat, routing, ticket, and log views; it should not contain agent or database business logic.
+- **`evaluation/`** holds labeled test scenarios and computes routing, response-quality, and ticket-generation metrics.
+- **`utils/logger.py`** records structured workflow events for the dashboard and debugging, with basic redaction for email addresses and long numeric values in user input.
 
-### agents/
-- Contains the individual LLM-based operational agents.
-- orchestrator/: coordinates the workflow and selects the correct agent.
-- classifier/: classifies messages into feedback/query categories.
-- feedback_handler/: handles positive and negative feedback logic.
-- query_handler/: resolves ticket status requests.
+## 7. Streamlit Interface
 
-### domain/
-- Defines shared business entities, such as customer messages, tickets, feedback types, and status fields.
-- Keeps the model layer separate from logic and UI.
+Provide these dashboard sections:
 
-### integrations/
-- database/: stores the support ticket table and retrieval logic.
-- llm/: keeps model connection code, prompt templates, and response-generation utilities.
+- **Chat interface:** text input and generated response.
+- **Agent status:** classification and agent/node that handled the request, with a simple visualization of the route.
+- **Ticket viewer:** table of tickets and their statuses.
+- **Logs viewer:** historical request outcomes and agent actions.
+- **Test scenarios:** preloaded examples for each intent, ticket status, and edge case.
 
-### data/
-- raw/: initial customer messages, historical tickets, and evaluation data.
-- processed/: cleaned or transformed records used for testing and QA.
+Show database interaction success/failure and workflow errors explicitly; do not present an unsuccessful lookup or ticket creation as a successful response.
 
-### evaluation/
-- prompts/: prompt templates for LLM evaluation.
-- test_cases/: scenarios for feedback classification, ticket creation, and status lookup.
-- reports/: results from model accuracy, routing success, and QA reviews.
+## 8. Logging, Evaluation, and LLMOps
 
-### logs/
-- Stores prompt traces, agent actions, ticket IDs, and debugging records.
+### Logging
 
-### config/
-- Environment settings, model parameters, and app configuration.
+Record timestamp, request identifier, user input, classification, selected agent, response, ticket ID when relevant, and success/failure status. Support local JSON or CSV log storage under `logs/`. Prompt traces and database actions may be included in a debug view. Avoid logging credentials or unnecessary sensitive banking/customer information.
 
-### tests/
-- Agent-level validation scenarios.
-- UI test coverage for dashboards, message simulation, and log views.
+### Evaluation
 
-### docs/
-- Planning, architecture notes, and requirements documentation.
+Maintain labeled cases for positive feedback, negative feedback, queries across ticket statuses, missing or malformed ticket numbers, unknown tickets, ambiguous messages, and model/DB failures. Measure:
 
-## 5. High-Level Execution Flow
+- Classification accuracy against labeled test cases
+- Agent routing success rate
+- Response quality for empathy and clarity
+- Ticket ID uniqueness and successful persistence
+- Ticket lookup correctness, including not-found handling
 
-1. User enters a support message in Streamlit.
-2. Streamlit sends the message to the orchestration layer.
-3. Classifier Agent decides if the input is positive feedback, negative feedback, or a query.
-4. The orchestrator routes the message to the relevant agent.
-5. The selected agent performs the action.
-   - Positive feedback: generates a thank-you message.
-   - Negative feedback: creates a support ticket and sends a polite acknowledgment.
-   - Query: fetches ticket status from the support database.
-6. Results are displayed on the Streamlit dashboard.
-7. Logs, traces, and evaluation scores are recorded for monitoring and improvement.
+Keep repeatable evaluation results in `evaluation/reports/` or the configured reporting location.
 
-## 6. LLMOps and Monitoring
+## 9. Error Handling and Operational Considerations
 
-The project should include:
+- Validate classifier output before routing; surface an actionable error if the model returns an unsupported label or fails.
+- Handle missing/invalid ticket numbers and unknown tickets as explicit query outcomes.
+- Handle SQLite and OpenAI failures explicitly, log the failure, and return a clear customer-safe message.
+- Ensure ticket creation is persisted before telling the customer that a ticket was created.
+- Keep API keys in environment variables or a secrets manager; do not expose them in the UI or logs.
 
-- Prompt evaluation and QA-based scoring
-- Classification routing accuracy checks
-- Ticket creation and status lookup validation
-- Log capture for prompts, outputs, and agent decisions
-- Feedback loop for historical improvement and tuning
+## 10. Implementation Direction
 
-## 7. Implementation Direction
-
-This plan is intentionally high-level and does not include code. The next step would be to build the actual Python modules, connect Streamlit, set up the support ticket database, and then implement each agent and evaluation pipeline.
+Implement the Python agents as LangGraph nodes and compile a `StateGraph` with typed shared state and classification-based conditional edges. Use OpenAI for message classification and generated feedback responses, SQLite for ticket persistence, and Streamlit as the workflow client and monitoring UI. Build and test the database repository and individual agents, then wire and test the graph, evaluation runner, logging, and dashboard.

@@ -1,0 +1,88 @@
+Design a classifier agent which will take users unstructured message. It categorises the message as positive feedback, negative feedback or query, Based on the classification it should route to the appropriate down stream agent.
+
+This agent to use LLM to openai with classification prompt
+
+
+In the lang graph architecture state machine to have following:
+State: Shared object to contain, user message, classification, ticket number, response
+Node: Each agent is a node
+Edges: Conditional routing based on classification of the message 
+
+2. Database Schema (SQLite)
+service_ticket table:
+ticket_id (TEXT PRIMARY KEY, 7-digit)
+customer_name (TEXT)
+message (TEXT)
+status (TEXT: 'New', 'In Progress', 'Resolved')
+created_at (TIMESTAMP)
+updated_at (TIMESTAMP)
+
+3. Classifier Agent (agents/classifier_agent.py)
+Input: Unstructured user message
+Process:
+Use LLM with classification prompt
+Return: positive_feedback, negative_feedback, or query
+Output: Classification result + routing decision
+
+4. Feedback Handler Agent (agents/feedback_handler_agent.py)
+Positive Feedback:
+
+Extract customer name (if present) or use generic
+Generate personalized thank-you message via LLM
+Format: "Thank you for your kind words, [CustomerName]! We're delighted to assist you."
+Negative Feedback:
+
+Generate unique 7-digit ticket number
+Insert ticket into support_tickets table (status: 'Unresolved')
+Generate empathetic apology message via LLM
+Format: "We apologize for the inconvenience. A new ticket #[TicketNumber] has been generated, and our team will follow up shortly."
+
+5. Query Handler Agent (agents/query_handler_agent.py)
+Process:
+Extract ticket number from message (regex: 7-digit pattern)
+Query support_tickets table by ticket_id
+Return status or error if ticket not found
+Output: "Your ticket #[TicketNumber] is currently marked as: [Status]."
+6. Agent Orchestrator (agents/__init__.py or main.py)
+Coordinate agent workflow
+Handle routing based on classifier output
+Manage error handling and logging
+Part 2: LLMOps (Evaluation, Logging, and Interface Design)
+
+7. Model Evaluation (evaluation/evaluator.py)
+Metrics:
+Classification accuracy (test cases)
+Agent routing success rate
+Response quality scores (empathy, clarity)
+Ticket generation uniqueness
+Test Cases (evaluation/test_cases.py):
+Positive feedback examples
+Negative feedback examples
+Query examples with various ticket statuses
+Edge cases (invalid tickets, ambiguous messages)
+8. Streamlit UI (ui/streamlit_app.py)
+Main Interface:
+
+Text input for user messages
+Real-time agent routing visualization
+Display classification result
+Show generated response
+Database interaction status
+Dashboard Sections:
+
+Chat Interface: Input/output area
+Agent Status: Show which agent processed the request
+Ticket Viewer: Table of all tickets in database
+Logs Viewer: Historical queries and agent actions
+Test Scenarios: Pre-loaded test cases for each agent type
+9. Logging System (utils/logger.py)
+Log Structure:
+Timestamp
+User input
+Classification result
+Agent used
+Response generated
+Ticket ID (if applicable)
+Success/failure status
+Log Storage: JSON or CSV format in logs/ directory
+Debug View: Show prompt traces, LLM calls, database queries
