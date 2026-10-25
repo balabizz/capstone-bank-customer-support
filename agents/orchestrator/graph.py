@@ -4,7 +4,7 @@ from langgraph.graph import END, START, StateGraph
 from langgraph.graph.state import CompiledStateGraph
 
 from agents.classifier.agent import classifier_node
-from agents.feedback_handler_agent import feedback_handler_node
+from agents.feedback_handler_agent import extract_customer_name, feedback_handler_node
 from agents.orchestrator.state import SupportState
 from agents.query_handler_agent import query_handler_node
 from config.settings import get_settings
@@ -35,6 +35,15 @@ def build_graph(
         feedback_handler_node(language_model, ticket_repository),
     )
     builder.add_node("query_handler", query_handler_node(ticket_repository))
+    def format_response(state: SupportState) -> dict[str, str]:
+        name = extract_customer_name(state["user_message"])
+        greeting = f"Dear {name}" if name else "Dear Customer"
+        return {
+            "response": f"{greeting},\n\n{state['response']}\n\nRegards,\nCustomer Support"
+        }
+
+    builder.add_node("format_response", format_response)
+    builder.add_edge("format_response", END)
     builder.add_edge(START, "classifier")
 
     def route_classification(state: SupportState) -> str:
@@ -52,9 +61,9 @@ def build_graph(
         {
             "feedback_handler": "feedback_handler",
             "query_handler": "query_handler",
-            "end": END,
+            "end": "format_response",
         },
     )
-    builder.add_edge("feedback_handler", END)
-    builder.add_edge("query_handler", END)
+    builder.add_edge("feedback_handler", "format_response")
+    builder.add_edge("query_handler", "format_response")
     return builder.compile()

@@ -34,7 +34,7 @@ Nodes return state updates rather than managing routing themselves. Keep the sta
 1. **Classifier node** — sends the message to an OpenAI model with a classification prompt and validates the result against the three supported labels.
 2. **Feedback handler node** — handles both feedback classes:
    - Positive: identify a customer name if present; otherwise use a generic greeting. Use the LLM to produce a warm, concise thank-you response.
-   - Negative: generate a unique seven-digit ticket number, save a ticket with initial status `New`, and use the LLM to produce an empathetic acknowledgment that includes the ticket number.
+   - Negative: generate a unique seven-digit ticket number, save a ticket with initial status `Unresolved`, and use the LLM to produce an empathetic acknowledgment that includes the ticket number.
 3. **Query handler node** — extracts a seven-digit ticket number from the message, looks it up in SQLite, and returns its status or a clear not-found/invalid-ticket response.
 
 The classifier node routes positive and negative feedback to the feedback handler and queries to the query handler. Each handler writes its result to state and transitions to the graph end. The compiled graph is the single workflow entry point used by the UI.
@@ -48,11 +48,11 @@ Use SQLite for local support-ticket storage. Define one table, `support_tickets`
 | `ticket_id` | TEXT | Primary key; exactly seven digits |
 | `customer_name` | TEXT | Nullable when the name is not provided |
 | `message` | TEXT | Customer's negative-feedback message |
-| `status` | TEXT | `New`, `In Progress`, or `Resolved` |
+| `status` | TEXT | `Unresolved` or `Resolved` |
 | `created_at` | TIMESTAMP | Ticket creation time |
 | `updated_at` | TIMESTAMP | Most recent status update |
 
-New tickets start with status `New`. This uses the database schema's initial status consistently rather than the conflicting `Unresolved` wording elsewhere in the input notes. Ticket generation must handle collisions by checking the primary key and generating another ID before insertion.
+New tickets start with status `Unresolved`. Ticket generation must handle collisions by checking the primary key and generating another ID before insertion.
 
 ## 4. Request Flow
 

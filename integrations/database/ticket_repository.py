@@ -7,7 +7,7 @@ from typing import Any
 from config.settings import get_settings
 from integrations.database.connection import initialize_database, managed_connection
 
-TICKET_STATUSES = ("New", "In Progress", "Resolved")
+TICKET_STATUSES = ("Unresolved", "Resolved")
 
 
 class TicketRepository:
@@ -31,7 +31,7 @@ class TicketRepository:
                         """
                         INSERT INTO support_tickets
                             (ticket_id, customer_name, message, status, created_at, updated_at)
-                        VALUES (?, ?, ?, 'New', ?, ?)
+                        VALUES (?, ?, ?, 'Unresolved', ?, ?)
                         """,
                         (ticket_number, customer_name, message, timestamp, timestamp),
                     )

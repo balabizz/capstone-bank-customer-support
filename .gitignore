@@ -3,3 +3,5 @@ __pycache__/
 *.py[cod]
 data/*.db
 logs/*.jsonl
+
+.DS_Store

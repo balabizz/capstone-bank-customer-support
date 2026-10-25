@@ -13,7 +13,7 @@ service_ticket table:
 ticket_id (TEXT PRIMARY KEY, 7-digit)
 customer_name (TEXT)
 message (TEXT)
-status (TEXT: 'New', 'In Progress', 'Resolved')
+status (TEXT: 'Unresolved', 'Resolved')
 created_at (TIMESTAMP)
 updated_at (TIMESTAMP)
 

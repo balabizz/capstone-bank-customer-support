@@ -30,4 +30,10 @@ python -m unittest discover -s tests -v
 
 ## Ticket statuses
 
-Tickets are created with status `New`. Supported statuses are `New`, `In Progress`, and `Resolved`.
+Tickets are created with status `Unresolved`. Supported statuses are `Unresolved` and `Resolved`.
+
+Existing `New` and `In Progress` tickets are automatically migrated to `Unresolved` when the database initializes. Resolved tickets and other ticket data are preserved.
+
+## Message routing
+
+Messages containing a valid seven-digit ticket number look up that ticket, even if they also express dissatisfaction. Without a ticket number, messages are classified by sentiment: negative feedback creates an Unresolved ticket and returns an empathetic acknowledgment with its number; positive feedback receives thanks. Neutral ticket-status questions ask for the ticket number without querying the ticket database.

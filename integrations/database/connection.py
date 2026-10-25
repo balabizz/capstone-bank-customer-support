@@ -12,7 +12,7 @@ CREATE TABLE IF NOT EXISTS support_tickets (
     ),
     customer_name TEXT,
     message TEXT NOT NULL,
-    status TEXT NOT NULL CHECK (status IN ('New', 'In Progress', 'Resolved')),
+    status TEXT NOT NULL CHECK (status IN ('Unresolved', 'Resolved')),
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL
 )
@@ -48,4 +48,23 @@ def managed_connection(
 
 def initialize_database(database_path: str | Path) -> None:
     with managed_connection(database_path) as connection:
-        connection.execute(SCHEMA)
+        connection.execute("BEGIN IMMEDIATE")
+        existing = connection.execute(
+            "SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'support_tickets'"
+        ).fetchone()
+        if existing and "'Unresolved'" not in existing["sql"]:
+            connection.execute("ALTER TABLE support_tickets RENAME TO support_tickets_legacy")
+            connection.execute(SCHEMA)
+            connection.execute(
+                """
+                INSERT INTO support_tickets
+                    (ticket_id, customer_name, message, status, created_at, updated_at)
+                SELECT ticket_id, customer_name, message,
+                       CASE WHEN status = 'Resolved' THEN 'Resolved' ELSE 'Unresolved' END,
+                       created_at, updated_at
+                FROM support_tickets_legacy
+                """
+            )
+            connection.execute("DROP TABLE support_tickets_legacy")
+        else:
+            connection.execute(SCHEMA)

@@ -1,6 +1,7 @@
 from typing import Protocol
 
 from agents.orchestrator.state import SupportState
+from agents.query_handler_agent import extract_ticket_number
 from integrations.llm.client import LLMServiceError
 
 ALLOWED_CLASSIFICATIONS = {"positive_feedback", "negative_feedback", "query"}
@@ -18,6 +19,9 @@ def classifier_node(llm: ClassifierLLM):
                 "error": "Please enter a message before submitting.",
                 "response": "I could not process an empty message.",
             }
+        ticket_number = extract_ticket_number(message)
+        if ticket_number is not None:
+            return {"classification": "query", "ticket_number": ticket_number, "error": ""}
         try:
             classification = llm.classify(message).strip().lower()
         except LLMServiceError as error:

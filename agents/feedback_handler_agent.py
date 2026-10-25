@@ -45,10 +45,9 @@ def feedback_handler_node(llm: FeedbackLLM, tickets: TicketRepository):
                     "error": "",
                 }
             except LLMServiceError as error:
-                name = f", {customer_name}" if customer_name else ""
                 return {
                     "agent_used": "feedback_handler",
-                    "response": f"Thank you for your kind words{name}! We're delighted to assist you.",
+                    "response": "Thank you for your kind words! We're delighted to assist you.",
                     "error": f"Generated a standard thank-you because the language model failed: {error}",
                 }
 

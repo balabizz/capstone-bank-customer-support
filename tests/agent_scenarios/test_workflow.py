@@ -1,6 +1,7 @@
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 from agents.orchestrator.graph import build_graph
 from integrations.database.ticket_repository import TicketRepository
@@ -57,12 +58,12 @@ class SupportWorkflowTests(unittest.TestCase):
 
         self.assertEqual(result["classification"], "negative_feedback")
         self.assertRegex(result["ticket_number"], r"^\d{7}$")
-        self.assertEqual(self.tickets.get_ticket(result["ticket_number"])["status"], "New")
+        self.assertEqual(self.tickets.get_ticket(result["ticket_number"])["status"], "Unresolved")
         self.assertIn(result["ticket_number"], result["response"])
 
     def test_ticket_query_returns_current_status(self) -> None:
         ticket_number = self.tickets.create_ticket("A payment issue")
-        self.tickets.update_status(ticket_number, "In Progress")
+        self.tickets.update_status(ticket_number, "Resolved")
 
         result = self.graph.invoke(
             {"user_message": f"What is the status of ticket {ticket_number}?"}
@@ -70,7 +71,62 @@ class SupportWorkflowTests(unittest.TestCase):
 
         self.assertEqual(result["classification"], "query")
         self.assertEqual(result["agent_used"], "query_handler")
-        self.assertIn("In Progress", result["response"])
+        self.assertIn("Resolved", result["response"])
+
+    def test_ticket_number_takes_priority_over_negative_sentiment(self) -> None:
+        number = self.tickets.create_ticket("Original complaint")
+        with patch.object(self.tickets, "create_ticket", wraps=self.tickets.create_ticket) as create, \
+             patch.object(self.tickets, "get_ticket", wraps=self.tickets.get_ticket) as lookup:
+            result = self.graph.invoke(
+                {"user_message": f"I am unhappy that ticket #{number} is still unresolved."}
+            )
+        self.assertEqual(result["classification"], "query")
+        self.assertEqual(result["agent_used"], "query_handler")
+        lookup.assert_called_once_with(number)
+        create.assert_not_called()
+        self.assertIn("Unresolved", result["response"])
+
+    def test_negative_question_without_number_creates_ticket_without_lookup(self) -> None:
+        with patch.object(self.tickets, "get_ticket") as lookup:
+            result = self.graph.invoke(
+                {"user_message": "I am unhappy. Why is my support ticket still unresolved?"}
+            )
+        lookup.assert_not_called()
+        self.assertEqual(result["classification"], "negative_feedback")
+        self.assertEqual(result["agent_used"], "feedback_handler")
+        self.assertEqual(self.tickets.get_ticket(result["ticket_number"])["status"], "Unresolved")
+        self.assertIn(result["ticket_number"], result["response"])
+
+    def test_neutral_query_without_number_does_not_access_tickets(self) -> None:
+        with patch.object(self.tickets, "get_ticket") as lookup, \
+             patch.object(self.tickets, "create_ticket") as create:
+            result = self.graph.invoke({"user_message": "Can you check my ticket status?"})
+        lookup.assert_not_called()
+        create.assert_not_called()
+        self.assertIn("Please include", result["response"])
+
+    def test_all_responses_have_customer_salutation_and_bank_signature(self) -> None:
+        for message in (
+            "Thanks for your help",
+            "I am unhappy about a charge",
+            "Check ticket 7654321",
+            "What is my ticket status?",
+            "",
+        ):
+            with self.subTest(message=message):
+                result = self.graph.invoke({"user_message": message})
+                self.assertTrue(result["response"].startswith("Dear Customer,\n\n"))
+                self.assertTrue(result["response"].endswith("\n\nRegards,\nCustomer Support"))
+
+    def test_explicit_customer_name_is_used_in_salutation(self) -> None:
+        for message in (
+            "Thanks. My name is Alex.",
+            "My name is Alex. I am unhappy about a charge.",
+            "My name is Alex. Check ticket 7654321.",
+        ):
+            with self.subTest(message=message):
+                result = self.graph.invoke({"user_message": message})
+                self.assertTrue(result["response"].startswith("Dear Alex,\n\n"))
 
     def test_unknown_ticket_is_reported(self) -> None:
         result = self.graph.invoke({"user_message": "Check ticket 7654321"})
@@ -85,9 +141,9 @@ class SupportWorkflowTests(unittest.TestCase):
         )
 
         self.assertEqual(result["agent_used"], "query_handler")
-        self.assertEqual(
-            result["response"],
+        self.assertIn(
             "Please include the seven-digit ticket number you want to check.",
+            result["response"],
         )
 
     def test_invalid_classifier_output_does_not_route(self) -> None:

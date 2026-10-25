@@ -7,9 +7,15 @@ positive_feedback, negative_feedback, or query.
 
 positive_feedback means praise, thanks, or other favorable feedback.
 negative_feedback means a complaint or dissatisfaction that needs follow-up.
-query means a question or request for information, including checking a ticket.
-If a message contains both feedback and a question, classify it as query only when
-the main request is to look up an existing ticket; otherwise classify its feedback.
+Messages containing a valid seven-digit ticket number are routed to ticket lookup
+by the application before this classification step.
+For messages without a ticket number, classify by sentiment first:
+- Complaints, dissatisfaction, frustration, or unresolved problems are negative_feedback,
+  even when phrased as a question or asking for a ticket update without its number.
+- Praise or thanks are positive_feedback.
+- Neutral questions or requests for information are query.
+For example, "Why is my transfer still delayed?" and "I am unhappy; where is my ticket?"
+are negative_feedback. "Can you check my ticket status?" is query.
 Return only the category label, with no punctuation or explanation."""
 
 
@@ -50,16 +56,20 @@ class OpenAIService:
         return self._generate(CLASSIFICATION_PROMPT, message).strip().lower()
 
     def thank_customer(self, message: str, customer_name: str | None) -> str:
-        name = customer_name or "the customer"
         instructions = (
+            "You represent Bank Customer Support. "
             "Write a concise, warm thank-you for positive feedback. "
-            f"Address the customer as {name!r} only if a name was explicitly provided; "
-            "otherwise use a generic greeting. Do not invent details."
+            "Return only the message body without a greeting, customer name, or signature; "
+            "the application adds the salutation and Regards, Customer Support signature. "
+            "Do not invent details."
         )
         return self._generate(instructions, message)
 
     def acknowledge_complaint(self, message: str, ticket_number: str) -> str:
         instructions = (
+            "You represent Bank Customer Support. "
+            "Return only the message body without a greeting or signature; "
+            "the application adds the salutation and Regards, Customer Support signature. "
             "Write a brief, empathetic acknowledgment of the customer's complaint. "
             "Apologize for the inconvenience, say the support team will follow up, "
             f"and include this ticket number exactly: {ticket_number}. "
