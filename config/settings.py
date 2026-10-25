@@ -1,3 +1,4 @@
+import math
 import os
 from dataclasses import dataclass
 from pathlib import Path
@@ -13,6 +14,35 @@ class Settings:
     openai_model: str
     database_path: Path
     log_path: Path
+    database_timeout_seconds: float
+    ticket_list_limit: int
+    ticket_id_generation_attempts: int
+
+
+def _positive_int_setting(name: str, default: int) -> int:
+    value = os.getenv(name)
+    if value is None:
+        return default
+    try:
+        parsed = int(value)
+    except ValueError as error:
+        raise ValueError(f"{name} must be a positive integer.") from error
+    if parsed <= 0:
+        raise ValueError(f"{name} must be a positive integer.")
+    return parsed
+
+
+def _positive_float_setting(name: str, default: float) -> float:
+    value = os.getenv(name)
+    if value is None:
+        return default
+    try:
+        parsed = float(value)
+    except ValueError as error:
+        raise ValueError(f"{name} must be a positive finite number.") from error
+    if parsed <= 0 or not math.isfinite(parsed):
+        raise ValueError(f"{name} must be a positive finite number.")
+    return parsed
 
 
 def get_settings() -> Settings:
@@ -28,4 +58,11 @@ def get_settings() -> Settings:
         openai_model=os.getenv("OPENAI_MODEL", "gpt-4o-mini"),
         database_path=database_path,
         log_path=log_path,
+        database_timeout_seconds=_positive_float_setting(
+            "SUPPORT_DB_TIMEOUT_SECONDS", 10.0
+        ),
+        ticket_list_limit=_positive_int_setting("SUPPORT_TICKET_LIST_LIMIT", 500),
+        ticket_id_generation_attempts=_positive_int_setting(
+            "SUPPORT_TICKET_ID_GENERATION_ATTEMPTS", 20
+        ),
     )

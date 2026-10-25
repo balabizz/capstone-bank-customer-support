@@ -18,7 +18,7 @@ A Streamlit banking-support assistant using LangGraph, OpenAI, and SQLite. The c
    streamlit run app/ui/streamlit_app.py
    ```
 
-The SQLite database and JSON Lines workflow log are created automatically under `data/` and `logs/`. Override their paths with `SUPPORT_DB_PATH` and `AGENT_LOG_PATH`.
+The SQLite database and JSON Lines workflow log are created automatically under `data/` and `logs/`. Override their paths with `SUPPORT_DB_PATH` and `AGENT_LOG_PATH`. Additional operational settings are `SUPPORT_DB_TIMEOUT_SECONDS` (default `10`), `SUPPORT_TICKET_LIST_LIMIT` (default `500`), and `SUPPORT_TICKET_ID_GENERATION_ATTEMPTS` (default `20`). Numeric settings must be positive; the database timeout must also be finite.
 
 ## Tests
 

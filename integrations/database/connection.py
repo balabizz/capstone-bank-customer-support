@@ -3,6 +3,8 @@ import sqlite3
 from pathlib import Path
 from collections.abc import Iterator
 
+from config.settings import get_settings
+
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS support_tickets (
     ticket_id TEXT PRIMARY KEY CHECK (
@@ -17,18 +19,26 @@ CREATE TABLE IF NOT EXISTS support_tickets (
 """
 
 
-def connect(database_path: str | Path) -> sqlite3.Connection:
+def connect(
+    database_path: str | Path,
+    timeout: float | None = None,
+) -> sqlite3.Connection:
     path = Path(database_path)
     path.parent.mkdir(parents=True, exist_ok=True)
-    connection = sqlite3.connect(path, timeout=10)
+    if timeout is None:
+        timeout = get_settings().database_timeout_seconds
+    connection = sqlite3.connect(path, timeout=timeout)
     connection.row_factory = sqlite3.Row
     connection.execute("PRAGMA foreign_keys = ON")
     return connection
 
 
 @contextmanager
-def managed_connection(database_path: str | Path) -> Iterator[sqlite3.Connection]:
-    connection = connect(database_path)
+def managed_connection(
+    database_path: str | Path,
+    timeout: float | None = None,
+) -> Iterator[sqlite3.Connection]:
+    connection = connect(database_path, timeout)
     try:
         with connection:
             yield connection

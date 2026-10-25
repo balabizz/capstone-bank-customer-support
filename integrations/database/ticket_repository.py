@@ -4,6 +4,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from config.settings import get_settings
 from integrations.database.connection import initialize_database, managed_connection
 
 TICKET_STATUSES = ("New", "In Progress", "Resolved")
@@ -12,6 +13,7 @@ TICKET_STATUSES = ("New", "In Progress", "Resolved")
 class TicketRepository:
     def __init__(self, database_path: str | Path) -> None:
         self.database_path = Path(database_path)
+        self._settings = get_settings()
         initialize_database(self.database_path)
 
     def create_ticket(
@@ -22,7 +24,7 @@ class TicketRepository:
         timestamp = datetime.now(timezone.utc).isoformat()
         with managed_connection(self.database_path) as connection:
             connection.execute("BEGIN IMMEDIATE")
-            for _ in range(20):
+            for _ in range(self._settings.ticket_id_generation_attempts):
                 ticket_number = f"{secrets.randbelow(9_000_000) + 1_000_000:07d}"
                 try:
                     connection.execute(
@@ -37,7 +39,10 @@ class TicketRepository:
                 except sqlite3.IntegrityError as error:
                     if "UNIQUE constraint failed: support_tickets.ticket_id" not in str(error):
                         raise
-            raise RuntimeError("Could not generate a unique ticket number after 20 attempts.")
+            raise RuntimeError(
+                "Could not generate a unique ticket number after "
+                f"{self._settings.ticket_id_generation_attempts} attempts."
+            )
 
     def get_ticket(self, ticket_number: str) -> dict[str, Any] | None:
         with managed_connection(self.database_path) as connection:
@@ -47,7 +52,9 @@ class TicketRepository:
             ).fetchone()
         return dict(row) if row is not None else None
 
-    def list_tickets(self, limit: int = 500) -> list[dict[str, Any]]:
+    def list_tickets(self, limit: int | None = None) -> list[dict[str, Any]]:
+        if limit is None:
+            limit = self._settings.ticket_list_limit
         with managed_connection(self.database_path) as connection:
             rows = connection.execute(
                 "SELECT * FROM support_tickets ORDER BY created_at DESC LIMIT ?",
